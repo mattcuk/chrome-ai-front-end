@@ -33,38 +33,13 @@ function escapeHtml(str){
 }
 
 function renderMarkdown(md){
-	if(!md) return '';
-	// Extract code blocks first and replace with placeholders
-	const codeBlocks = [];
-	let text = String(md);
-	text = text.replace(/```([\s\S]*?)```/g, function(_, code){
-		const html = '<pre><code>' + escapeHtml(code) + '</code></pre>';
-		const idx = codeBlocks.length; codeBlocks.push(html);
-		return `@@CODEBLOCK_${idx}@@`;
-	});
-
-	// Escape remaining text
-	text = escapeHtml(text);
-
-	// Inline code
-	text = text.replace(/`([^`]+)`/g, function(_, c){ return '<code>' + escapeHtml(c) + '</code>'; });
-
-	// Links [text](url)
-	text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, label, url){
-		return '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(label) + '</a>';
-	});
-
-	// Bold **text** and italics *text*
-	text = text.replace(/\*\*([^*]+)\*\*/g, function(_, t){ return '<strong>' + escapeHtml(t) + '</strong>'; });
-	text = text.replace(/\*([^*]+)\*/g, function(_, t){ return '<em>' + escapeHtml(t) + '</em>'; });
-
-	// Paragraphs: preserve blank-line paragraph separation and single newlines as <br>
-	const paragraphs = text.split(/\n\s*\n/).map(p => p.replace(/\n/g, '<br>'));
-	text = '<p>' + paragraphs.join('</p><p>') + '</p>';
-
-	// Restore code blocks
-	text = text.replace(/@@CODEBLOCK_(\d+)@@/g, function(_, idx){ return codeBlocks[Number(idx)] || ''; });
-	return text;
+	const text = String(md || '');
+	if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+		const html = marked.parse(text);
+		return DOMPurify.sanitize(html, { ADD_ATTR: ['target', 'rel'] });
+	}
+	// Fallback for environments without marked/DOMPurify.
+	return escapeHtml(text).replace(/\n/g, '<br>');
 }
 
 function setStatus(text, busy=false){
