@@ -49,9 +49,6 @@ async function initAvailability(){
 	try{
 		setStatus('Checking model availability...', true);
 		const availability = await LanguageModel.availability({
-            // ⚠️ Always pass the same options to the `availability()` function that
-            // you use in `prompt()` or `promptStreaming()`. This is critical to
-            // align model language and modality capabilities.
             expectedInputs: [{ type: 'text', languages: ['en'] }],
             expectedOutputs: [{ type: 'text', languages: ['en'] }],
         });
@@ -88,12 +85,6 @@ async function handleSend(prompt){
 		if(usePromptAPI){
 			session = await withTimeout(LanguageModel.create({systemPrompt: SYSTEM_PROMPT, signal: controller.signal}), 30000, 'Session creation');
 
-			const tokenCount = await session.countPromptTokens(prompt);
-			if(tokenCount > session.tokensLeft){
-				appendMessage('assistant', 'Input exceeds token budget. Please shorten your message.');
-				return;
-			}
-
 			// create assistant placeholder and stream into it if supported
 			const assistantEl = appendMessage('assistant', '');
 			if(typeof session.promptStreaming === 'function'){
@@ -124,7 +115,7 @@ async function handleSend(prompt){
 				appendMessage('assistant', String(res));
 			}
 
-			setStatus(`Tokens used: ${session.tokensSoFar} / ${session.maxTokens}`);
+			setStatus(`Ready`);
 		} else {
 			// fallback mock
 			const assistantEl = appendMessage('assistant', '');
