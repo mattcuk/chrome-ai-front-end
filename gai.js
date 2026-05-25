@@ -226,5 +226,5 @@ newThreadBtn?.addEventListener('click', ()=>{
   startNewThread();
 });
 
-appendMessage('assistant', 'Hello — ask me anything. This demo will use Chrome\'s built-in LLM when available.');
+appendMessage('assistant', 'Hello — ask me anything. This will use Chrome\'s built-in local \'Nano\' LLM when available.');
 initAvailability();
