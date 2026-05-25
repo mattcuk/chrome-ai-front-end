@@ -6,9 +6,11 @@ const input = document.getElementById('input');
 const statusEl = document.getElementById('status');
 const sendBtn = document.getElementById('sendBtn');
 const cancelBtn = document.getElementById('cancelBtn');
+const newThreadBtn = document.getElementById('newThreadBtn');
 
 const SYSTEM_PROMPT = "You are a helpful assistant.";
 let controller = null;
+let session = null;
 let isRunning = false;
 
 function appendMessage(role, text){
@@ -19,6 +21,50 @@ function appendMessage(role, text){
 	messagesEl.appendChild(el);
 	messagesEl.scrollTop = messagesEl.scrollHeight;
 	return el;
+}
+
+function escapeHtml(str){
+	return String(str)
+	  .replace(/&/g, '&amp;')
+	  .replace(/</g, '&lt;')
+	  .replace(/>/g, '&gt;')
+	  .replace(/"/g, '&quot;')
+	  .replace(/'/g, '&#39;');
+}
+
+function renderMarkdown(md){
+	if(!md) return '';
+	// Extract code blocks first and replace with placeholders
+	const codeBlocks = [];
+	let text = String(md);
+	text = text.replace(/```([\s\S]*?)```/g, function(_, code){
+		const html = '<pre><code>' + escapeHtml(code) + '</code></pre>';
+		const idx = codeBlocks.length; codeBlocks.push(html);
+		return `@@CODEBLOCK_${idx}@@`;
+	});
+
+	// Escape remaining text
+	text = escapeHtml(text);
+
+	// Inline code
+	text = text.replace(/`([^`]+)`/g, function(_, c){ return '<code>' + escapeHtml(c) + '</code>'; });
+
+	// Links [text](url)
+	text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, label, url){
+		return '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(label) + '</a>';
+	});
+
+	// Bold **text** and italics *text*
+	text = text.replace(/\*\*([^*]+)\*\*/g, function(_, t){ return '<strong>' + escapeHtml(t) + '</strong>'; });
+	text = text.replace(/\*([^*]+)\*/g, function(_, t){ return '<em>' + escapeHtml(t) + '</em>'; });
+
+	// Paragraphs: preserve blank-line paragraph separation and single newlines as <br>
+	const paragraphs = text.split(/\n\s*\n/).map(p => p.replace(/\n/g, '<br>'));
+	text = '<p>' + paragraphs.join('</p><p>') + '</p>';
+
+	// Restore code blocks
+	text = text.replace(/@@CODEBLOCK_(\d+)@@/g, function(_, idx){ return codeBlocks[Number(idx)] || ''; });
+	return text;
 }
 
 function setStatus(text, busy=false){
@@ -33,6 +79,18 @@ function mockGenerate(prompt){
 	return new Promise(resolve=>{
 		setTimeout(()=>resolve(`Echo: ${prompt.slice(0,400)}${prompt.length>400? '…':''}\n\n(This is a local mock response.)`), 800 + Math.random()*800);
 	});
+}
+
+function startNewThread(){
+	// abort any in-flight generation
+	try{ controller?.abort(); }catch(e){}
+	try{ session?.destroy?.(); }catch(e){}
+	session = null;
+	// clear messages and re-add assistant starter
+	messagesEl.innerHTML = '';
+	appendMessage('assistant', 'New thread started. Hello — ask me anything.');
+	setStatus('New thread started');
+	input.focus();
 }
 
 function withTimeout(promise, ms, label){
@@ -83,9 +141,11 @@ async function handleSend(prompt){
 
 	try{
 		if(usePromptAPI){
-			session = await withTimeout(LanguageModel.create({systemPrompt: SYSTEM_PROMPT, signal: controller.signal}), 30000, 'Session creation');
+			if(!session){
+				session = await withTimeout(LanguageModel.create({systemPrompt: SYSTEM_PROMPT, signal: controller.signal}), 30000, 'Session creation');
+				setStatus('Conversation session ready.');
+			}
 
-			// create assistant placeholder and stream into it if supported
 			const assistantEl = appendMessage('assistant', '');
 			if(typeof session.promptStreaming === 'function'){
 				const stream = session.promptStreaming(prompt, {signal: controller.signal});
@@ -99,28 +159,27 @@ async function handleSend(prompt){
 					}
 					if(isCumulative === false){
 						accumulated += chunk;
-						assistantEl.querySelector('.body').textContent = accumulated;
+						assistantEl.querySelector('.body').innerHTML = renderMarkdown(accumulated);
 					} else {
-						assistantEl.querySelector('.body').textContent = chunk;
+						assistantEl.querySelector('.body').innerHTML = renderMarkdown(chunk);
 						accumulated = chunk;
 					}
 					messagesEl.scrollTop = messagesEl.scrollHeight;
 				}
 			} else if(typeof session.prompt === 'function'){
 				const res = await session.prompt(prompt, {signal: controller.signal});
-				assistantEl.querySelector('.body').textContent = String(res);
+				assistantEl.querySelector('.body').innerHTML = renderMarkdown(String(res));
 			} else {
-				// unknown session interface
 				const res = await session.prompt(prompt);
-				appendMessage('assistant', String(res));
+				assistantEl.querySelector('.body').innerHTML = renderMarkdown(String(res));
 			}
 
-			setStatus(`Ready`);
+			setStatus(`Ready — conversation preserved.`);
 		} else {
 			// fallback mock
 			const assistantEl = appendMessage('assistant', '');
 			const text = await mockGenerate(prompt);
-			assistantEl.querySelector('.body').textContent = text;
+			assistantEl.querySelector('.body').innerHTML = renderMarkdown(text);
 			setStatus('Fallback response');
 		}
 	}catch(err){
@@ -133,13 +192,16 @@ async function handleSend(prompt){
 			setStatus('Error');
 		}
 	}finally{
-		try{ if(session) session.destroy(); }catch(e){console.warn('destroy failed', e)}
 		controller = null;
 		isRunning = false;
 		sendBtn.disabled = false;
 		cancelBtn.hidden = true;
 	}
 }
+
+window.addEventListener('beforeunload', ()=>{
+	try{ session?.destroy?.(); }catch(e){ }
+});
 
 form.addEventListener('submit', async (e)=>{
 	e.preventDefault();
@@ -158,6 +220,10 @@ input.addEventListener('keydown', (e)=>{
 
 cancelBtn.addEventListener('click', ()=>{
 	controller?.abort();
+});
+
+newThreadBtn?.addEventListener('click', ()=>{
+  startNewThread();
 });
 
 appendMessage('assistant', 'Hello — ask me anything. This demo will use Chrome\'s built-in LLM when available.');
