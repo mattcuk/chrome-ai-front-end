@@ -5,7 +5,7 @@ I've designed this tool so that you can interact with the AI with a chat interfa
 
 All the files to run it can be saved to your PC and won't need internet access.
 
-[image](ui.png)
+![UI](ui.png)
 
 You can access the chat interface online here;
 https://mattcuk.github.io/chrome-ai-front-end/gai.html
