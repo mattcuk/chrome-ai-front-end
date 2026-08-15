@@ -26,7 +26,8 @@
 					<div class="meta">Chrome Nano LLM </div> 
 				</div>
 				<div class="header-controls">
-					<button id="infoBtn" class="info-btn" title="About this tool">Info</button>
+					<button id="settingsBtn" class="settings-btn" title="System settings">Settings</button>
+					<button id="infoBtn" class="info-btn" title="About this tool">About</button>
 				</div>
 			</header>
 
@@ -55,6 +56,23 @@
 				<p>You can find the up-to-date project on GitHub here;<br><a href="https://github.com/mattcuk/chrome-ai-front-end" target="_blank" rel="noopener noreferrer">https://github.com/mattcuk/chrome-ai-front-end</a></p>
 				<p>This project uses code from <a href="https://github.com/cure53/DOMPurify" target="_blank" rel="noopener noreferrer">DOMPurify</a> and <a href="https://github.com/markedjs/marked" target="_blank" rel="noopener noreferrer">Marked</a> to format the LLM responses.</p>
 				<div style="text-align:right;margin-top:12px"><button id="closeInfoBtn" class="modal-close">Close</button></div>
+			</div>
+		</div>
+	</div>
+
+	<div id="settingsModal" class="modal-overlay" hidden>
+		<div class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+			<div class="modal-content">
+				<h3 id="settingsTitle">System prompt</h3>
+				<p>Configure the instructions that are sent with every message.</p>
+				<label for="systemPromptInput" class="sr-only">System prompt</label>
+				<textarea id="systemPromptInput" rows="8" spellcheck="false"></textarea>
+				<div class="modal-actions">
+					<button id="resetSettingsBtn" class="secondary-btn" type="button">Reset default</button>
+					<div class="modal-actions-spacer"></div>
+					<button id="closeSettingsBtn" class="modal-close" type="button">Close</button>
+					<button id="saveSettingsBtn" class="primary-btn" type="button">Save</button>
+				</div>
 			</div>
 		</div>
 	</div>

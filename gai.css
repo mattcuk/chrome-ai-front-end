@@ -11,7 +11,7 @@
 *{box-sizing:border-box}
 html,body{height:100%}
 body{font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial; margin:0; background:linear-gradient(180deg,var(--bg),#071021); color:#e6eef8}
-.app{display:grid;grid-template-columns:260px 1fr;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02));box-shadow:0 6px 30px rgba(2,6,23,0.6);overflow:hidden}
+.app{display:grid;grid-template-columns:260px 1fr;max-width:1200px;margin:15px auto;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02));box-shadow:0 6px 30px rgba(2,6,23,0.6);overflow:hidden}
 .sidebar{border-right:1px solid rgba(255,255,255,0.03);padding:12px 10px;background:linear-gradient(0deg, rgba(255,255,255,0.01), transparent)}
 .sidebar-header{display:flex;align-items:center;gap:8px;padding:6px 4px}
 .sidebar-header h2{margin:0;font-size:0.95rem}
@@ -27,6 +27,7 @@ body{font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial; margin:0; back
 .app-header .title-wrap{display:flex;flex-direction:column}
 .app-header h1{margin:0;font-size:1.1rem}
 .meta{color:var(--muted);font-size:0.85rem}
+.header-controls{display:flex;align-items:center;gap:8px;margin-left:auto}
 .new-thread{background-color:var(--accent);border:1px solid rgba(255,255,255,0.04);color:white;padding:6px 10px;margin-left:22px;border-radius:8px;cursor:pointer}
 .new-thread:active{transform:translateY(1px)}
 #main-chat removed to avoid empty ruleset
@@ -58,13 +59,20 @@ body{font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial; margin:0; back
 .spinner{display:inline-block;width:18px;height:18px;margin-right:6px;margin-top:-2px;border-radius:50%;border:2px solid rgba(255,255,255,0.08);border-top-color:var(--accent);animation:spin 1s linear infinite;vertical-align:middle}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-/* Info button and modal styles */
-.info-btn{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted);padding:6px 10px;border-radius:8px;cursor:pointer}
-.info-btn:active{transform:translateY(1px)}
+/* Info / settings button and modal styles */
+.info-btn,.settings-btn{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted);padding:6px 10px;border-radius:8px;cursor:pointer}
+.info-btn:active,.settings-btn:active{transform:translateY(1px)}
 .modal-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:1200}
 .modal-overlay[hidden]{display:none}
 .modal{background:linear-gradient(180deg,var(--card),rgba(11,17,27,0.95));color:inherit;padding:18px;border-radius:12px;max-width:720px;width:calc(100% - 48px);box-shadow:0 12px 48px rgba(2,6,23,0.7)}
 .modal-content h3{margin:0 0 8px 0}
 .modal-content p{color:var(--muted);line-height:1.4}
-.modal-close{background:var(--accent);color:white;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+#systemPromptInput{width:100%;resize:vertical;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);background:rgba(15,23,32,0.8);color:inherit;line-height:1.4}
+.modal-actions{display:flex;align-items:center;gap:8px;margin-top:12px}
+.modal-actions-spacer{flex:1}
+.primary-btn,.secondary-btn,.modal-close{padding:8px 12px;border-radius:8px;cursor:pointer;border:none}
+.primary-btn{background:var(--accent);color:white}
+.secondary-btn{background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.04)}
+.modal-close{background:var(--accent);color:white}
 .modal-content a{color:var(--accent);text-decoration:none}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}

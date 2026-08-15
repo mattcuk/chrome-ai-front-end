@@ -8,11 +8,18 @@ const sendBtn = document.getElementById('sendBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 const newThreadBtn = document.getElementById('newThreadBtn');
 const threadsEl = document.getElementById('threads');
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsModal = document.getElementById('settingsModal');
+const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+const resetSettingsBtn = document.getElementById('resetSettingsBtn');
+const systemPromptInput = document.getElementById('systemPromptInput');
 const infoBtn = document.getElementById('infoBtn');
 const infoModal = document.getElementById('infoModal');
 const closeInfoBtn = document.getElementById('closeInfoBtn');
 
-const SYSTEM_PROMPT = "You are a helpful assistant.";
+const DEFAULT_SYSTEM_PROMPT = 'You are a helpful assistant.';
+let systemPrompt = DEFAULT_SYSTEM_PROMPT;
 let controller = null;
 let session = null;
 let isRunning = false;
@@ -288,6 +295,29 @@ async function persistAssistantMessage(content){
 	}catch(e){ console.warn('persist assistant msg failed', e); }
 }
 
+function normalizeSystemPrompt(value){
+	const v = String(value ?? '').trim();
+	return v || DEFAULT_SYSTEM_PROMPT;
+}
+
+async function initSystemPrompt(){
+	const stored = await getMeta('systemPrompt');
+	const nextPrompt = normalizeSystemPrompt(stored ?? DEFAULT_SYSTEM_PROMPT);
+	systemPrompt = nextPrompt;
+	if(!stored || !String(stored).trim()){
+		await saveMeta('systemPrompt', systemPrompt);
+	}
+	if(systemPromptInput) systemPromptInput.value = systemPrompt;
+	return systemPrompt;
+}
+
+async function saveSystemPrompt(value){
+	systemPrompt = normalizeSystemPrompt(value);
+	await saveMeta('systemPrompt', systemPrompt);
+	if(systemPromptInput) systemPromptInput.value = systemPrompt;
+	return systemPrompt;
+}
+
 async function initAvailability(){
 	if(!('LanguageModel' in self)){
 		setStatus('Prompt API not supported — using fallback.');
@@ -321,6 +351,7 @@ async function initAvailability(){
 
 async function initPersistence(){
 	try{ db = await openDB(); }catch(e){ console.warn('IndexedDB open failed', e); db = null; }
+	await initSystemPrompt();
 	// Always start with a new conversation on page load
 	const starterText = 'Hello. Ask me anything. This will use Chrome\'s built-in local \'Nano\' LLM when available.';
 	const conv = await createConversation(starterText, false);
@@ -387,13 +418,13 @@ async function handleSend(prompt){
 		if(db) convForPrompt = await idbGet('conversations', currentConversationId);
 		if(!convForPrompt) convForPrompt = JSON.parse(localStorage.getItem('gai.conv.'+currentConversationId) || '{}');
 		const msgs = (convForPrompt.messages || []).map(m => (m.role === 'user' ? 'User: ' : 'Assistant: ') + m.content).join('\n');
-		combinedPrompt = SYSTEM_PROMPT + '\n\n' + msgs + '\nAssistant:';
+		combinedPrompt = systemPrompt + '\n\n' + msgs + '\nAssistant:';
 	}catch(e){ console.warn('could not build combined prompt', e); }
 
 	try{
 		if(usePromptAPI){
 			if(!session){
-				session = await withTimeout(LanguageModel.create({systemPrompt: SYSTEM_PROMPT, signal: controller.signal}), 30000, 'Session creation');
+				session = await withTimeout(LanguageModel.create({systemPrompt: systemPrompt, signal: controller.signal}), 30000, 'Session creation');
 				setStatus('Chat session ready.');
 			}
 
@@ -486,7 +517,7 @@ newThreadBtn?.addEventListener('click', ()=>{
   startNewThread();
 });
 
-// Info modal handlers
+// Info/settings modal handlers
 infoBtn?.addEventListener('click', ()=>{
 	if(infoModal) infoModal.hidden = false;
 	// prevent body scroll while modal open
@@ -496,11 +527,35 @@ closeInfoBtn?.addEventListener('click', ()=>{
 	if(infoModal) infoModal.hidden = true;
 	document.body.style.overflow = '';
 });
+settingsBtn?.addEventListener('click', ()=>{
+	if(systemPromptInput) systemPromptInput.value = systemPrompt;
+	if(settingsModal) settingsModal.hidden = false;
+	document.body.style.overflow = 'hidden';
+});
+closeSettingsBtn?.addEventListener('click', ()=>{
+	if(settingsModal) settingsModal.hidden = true;
+	document.body.style.overflow = '';
+});
+resetSettingsBtn?.addEventListener('click', ()=>{
+	if(systemPromptInput) systemPromptInput.value = DEFAULT_SYSTEM_PROMPT;
+});
+saveSettingsBtn?.addEventListener('click', async ()=>{
+	await saveSystemPrompt(systemPromptInput ? systemPromptInput.value : DEFAULT_SYSTEM_PROMPT);
+	if(settingsModal) settingsModal.hidden = true;
+	document.body.style.overflow = '';
+	setStatus('System prompt saved.');
+});
 // click overlay to close
 infoModal?.addEventListener('click', (e)=>{
 	if(e.target === infoModal){ infoModal.hidden = true; document.body.style.overflow = ''; }
 });
-window.addEventListener('keydown', (e)=>{ if(e.key === 'Escape' && infoModal && !infoModal.hidden){ infoModal.hidden = true; document.body.style.overflow = ''; } });
+settingsModal?.addEventListener('click', (e)=>{
+	if(e.target === settingsModal){ settingsModal.hidden = true; document.body.style.overflow = ''; }
+});
+window.addEventListener('keydown', (e)=>{
+	if(e.key === 'Escape' && infoModal && !infoModal.hidden){ infoModal.hidden = true; document.body.style.overflow = ''; }
+	if(e.key === 'Escape' && settingsModal && !settingsModal.hidden){ settingsModal.hidden = true; document.body.style.overflow = ''; }
+});
 
 // Initialize
 (async ()=>{ await initAvailability(); await initPersistence(); })();
