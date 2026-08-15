@@ -397,7 +397,8 @@ async function handleSend(prompt){
 				setStatus('Chat session ready.');
 			}
 
-			const assistantEl = appendMessage('assistant', '');
+			const assistantEl = appendMessage('assistant', 'Thinking...');
+			assistantEl.querySelector('.body').innerHTML = renderMarkdown('Thinking...');
 
 			setStatus(`Responding...`, true);
 

@@ -16,9 +16,9 @@ body{font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial; margin:0; back
 .sidebar-header{display:flex;align-items:center;gap:8px;padding:6px 4px}
 .sidebar-header h2{margin:0;font-size:0.95rem}
 .threads{margin-top:8px;display:flex;flex-direction:column;gap:8px}
-.thread{padding-right:10px;border-radius:10px;background:transparent;color:var(--muted);cursor:pointer;border:1px solid transparent}
+.thread{padding-right:20px;border-radius:10px;background:transparent;color:var(--muted);cursor:pointer;border:1px solid transparent}
 .thread.active{background:linear-gradient(90deg, rgba(79,70,229,0.15), rgba(79,70,229,0.06));color:white;border-color:rgba(79,70,229,0.12)}
-.thread .title{font-weight:600;font-size:0.95rem}
+.thread .title{font-weight:600;font-size:0.85rem}
 .thread .preview{font-size:0.85rem;color:var(--muted);margin-top:4px;display:none;}
 .thread{position:relative}
 .thread-delete{position:absolute;right:0px;top:0px;background:transparent;border:none;color:var(--muted);cursor:pointer;padding:6px;border-radius:6px}
@@ -27,7 +27,7 @@ body{font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial; margin:0; back
 .app-header .title-wrap{display:flex;flex-direction:column}
 .app-header h1{margin:0;font-size:1.1rem}
 .meta{color:var(--muted);font-size:0.85rem}
-.new-thread{background-color:var(--accent);border:1px solid rgba(255,255,255,0.04);color:white;padding:6px 10px;border-radius:8px;cursor:pointer}
+.new-thread{background-color:var(--accent);border:1px solid rgba(255,255,255,0.04);color:white;padding:6px 10px;margin-left:22px;border-radius:8px;cursor:pointer}
 .new-thread:active{transform:translateY(1px)}
 #main-chat removed to avoid empty ruleset
 .main-chat{display:flex;flex-direction:column;background:transparent;min-height:0;position:relative}
