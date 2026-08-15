@@ -182,7 +182,7 @@ function renderThreadList(convs){
 		const title = document.createElement('div'); title.className='title'; title.textContent = c.title || 'Conversation';
 		const preview = document.createElement('div'); preview.className='preview'; preview.textContent = (c.messages && c.messages.length)? c.messages[c.messages.length-1].content.slice(0,120) : '';
 		const del = document.createElement('button'); del.className='thread-delete'; del.title='Delete conversation'; del.innerHTML='&times;';
-		del.addEventListener('click', (e)=>{ e.stopPropagation(); if(confirm('Delete this conversation?')) deleteConversation(c.id); });
+		del.addEventListener('click', (e)=>{ e.stopPropagation(); deleteConversation(c.id); });
 		el.appendChild(del);
 		el.appendChild(title); el.appendChild(preview);
 		el.addEventListener('click', ()=>{ loadConversation(c.id); });
@@ -261,6 +261,7 @@ function renderConversation(conv){
 	messagesEl.innerHTML = '';
 	conv.messages.forEach(m => appendMessage(m.role, m.content));
 	messagesEl.scrollTop = messagesEl.scrollHeight;
+	setStatus(`Ready.`);
 }
 
 // Ensure conversation has a helpful title derived from its messages
@@ -335,6 +336,7 @@ async function initPersistence(){
 async function handleSend(prompt){
 	if(isRunning) return;
 	isRunning = true;
+	let finalStatus = 'Ready.';
 	appendMessage('user', prompt);
 	// persist user message
 	try{
@@ -392,10 +394,13 @@ async function handleSend(prompt){
 		if(usePromptAPI){
 			if(!session){
 				session = await withTimeout(LanguageModel.create({systemPrompt: SYSTEM_PROMPT, signal: controller.signal}), 30000, 'Session creation');
-				setStatus('Conversation session ready.');
+				setStatus('Chat session ready.');
 			}
 
 			const assistantEl = appendMessage('assistant', '');
+
+			setStatus(`Responding...`, true);
+
 			if(typeof session.promptStreaming === 'function'){
 				const stream = session.promptStreaming(combinedPrompt, {signal: controller.signal});
 				let accumulated = '';
@@ -427,30 +432,29 @@ async function handleSend(prompt){
 				assistantEl.querySelector('.body').innerHTML = renderMarkdown(String(res));
 				await persistAssistantMessage(String(res));
 			}
-
-			setStatus(`Ready — conversation preserved.`);
 		} else {
 			// fallback mock
 			const assistantEl = appendMessage('assistant', '');
 			const text = await mockGenerate(combinedPrompt);
 			assistantEl.querySelector('.body').innerHTML = renderMarkdown(text);
 			await persistAssistantMessage(text);
-			setStatus('Fallback response');
+			finalStatus = 'Ready.';
 		}
 	}catch(err){
 		if(err.name === 'AbortError'){
 			appendMessage('assistant', '[Generation cancelled]');
-			setStatus('Cancelled');
+			finalStatus = 'Cancelled';
 		} else {
 			console.error('Generation failed', err);
 			appendMessage('assistant', 'Error generating response — check console.');
-			setStatus('Error');
+			finalStatus = 'Error';
 		}
 	}finally{
 		controller = null;
 		isRunning = false;
 		sendBtn.disabled = false;
 		cancelBtn.hidden = true;
+		setStatus(finalStatus);
 	}
 }
 
