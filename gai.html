@@ -4,38 +4,64 @@
 <head>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width,initial-scale=1" />
-	<title>Google Local Nano LLM </title>
+	<title>AI Chat - Chrome Local Nano LLM</title>
 	<link rel="stylesheet" href="gai.css">
 	<link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
 	<link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
 </head>
 <body>
 	<main class="app">
-		<header class="app-header">
-			<h1>Local AI Chat</h1>
-			<div class="meta">Chrome Nano LLM</div>
-			<div class="header-controls">
-				<button id="newThreadBtn" class="new-thread" title="Start a new thread">New Thread</button>
+		<aside class="sidebar">
+			<div class="sidebar-header">
+				<h2>Conversations</h2>
+				<button id="newThreadBtn" class="new-thread" title="Start a new thread">New</button>
 			</div>
-		</header>
+			<div id="threads" class="threads"></div>
+		</aside>
 
-		<section id="chat" class="chat">
-			<div id="messages" class="messages"></div>
+		<section class="main-chat">
+			<header class="app-header">
+				<div class="title-wrap">
+					<h1>Local AI Chat</h1>
+					<div class="meta">Chrome Nano LLM </div> 
+				</div>
+				<div class="header-controls">
+					<button id="infoBtn" class="info-btn" title="About this tool">Info</button>
+				</div>
+			</header>
+
+			<section id="chat" class="chat">
+				<div id="messages" class="messages"></div>
+			</section>
+
+			<form id="composer" class="composer" autocomplete="off">
+				<textarea id="input" placeholder="Type a message and press Enter" rows="1"></textarea>
+				<div class="controls">
+					<button id="sendBtn" type="submit">Send</button>
+					<button id="cancelBtn" type="button" hidden>Cancel</button>
+				</div>
+			</form>
+
+			<div id="status" class="status" aria-live="polite"></div>
 		</section>
-
-		<form id="composer" class="composer" autocomplete="off">
-			<textarea id="input" placeholder="Type a message and press Enter" rows="1"></textarea>
-			<div class="controls">
-				<button id="sendBtn" type="submit">Send</button>
-				<button id="cancelBtn" type="button" hidden>Cancel</button>
-			</div>
-		</form>
-
-		<div id="status" class="status" aria-live="polite"></div>
 	</main>
 
-    <script src="https://cdn.jsdelivr.net/npm/marked@13.0.3/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-    <script src="gai.js"></script>
+	<div id="infoModal" class="modal-overlay" hidden>
+		<div class="modal" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
+			<div class="modal-content">
+				<h3 id="infoTitle">About Local AI Chat</h3>
+				<p>This is a lightweight local chat UI that will use Chrome's built-in Nano LLM. Conversations are stored locally (IndexedDB with a localStorage fallback) so history persists across page loads. It runs entirely in your browser and does not send your data to external servers.</p>
+				<p>Use the left sidebar to view saved conversations. Click <strong>New</strong> to start a fresh thread.</p>
+				<p>You can find the up-to-date project on GitHub here;<br><a href="https://github.com/mattcuk/chrome-ai-front-end" target="_blank" rel="noopener noreferrer">https://github.com/mattcuk/chrome-ai-front-end</a></p>
+				<p>This project uses code from <a href="https://github.com/cure53/DOMPurify" target="_blank" rel="noopener noreferrer">DOMPurify</a> and <a href="https://github.com/markedjs/marked" target="_blank" rel="noopener noreferrer">Marked</a> to format the LLM responses.</p>
+				<div style="text-align:right;margin-top:12px"><button id="closeInfoBtn" class="modal-close">Close</button></div>
+			</div>
+		</div>
+	</div>
+
+	<script src="marked.min.js"></script>
+	<script src="purify.min.js"></script>
+	<script src="gai.js"></script>
+
 </body>
 </html>

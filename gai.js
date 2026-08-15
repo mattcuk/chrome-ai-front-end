@@ -7,17 +7,35 @@ const statusEl = document.getElementById('status');
 const sendBtn = document.getElementById('sendBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 const newThreadBtn = document.getElementById('newThreadBtn');
+const threadsEl = document.getElementById('threads');
+const infoBtn = document.getElementById('infoBtn');
+const infoModal = document.getElementById('infoModal');
+const closeInfoBtn = document.getElementById('closeInfoBtn');
 
 const SYSTEM_PROMPT = "You are a helpful assistant.";
 let controller = null;
 let session = null;
 let isRunning = false;
+let db = null;
+let currentConversationId = null;
+const transientConvs = {};
 
 function appendMessage(role, text){
 	const el = document.createElement('div');
 	el.className = 'msg ' + (role === 'user' ? 'user' : 'assistant');
-	el.innerHTML = `<div class="meta">${role === 'user' ? 'You' : 'Assistant'}</div><div class="body"></div>`;
-	el.querySelector('.body').textContent = text;
+	const avatar = document.createElement('div'); avatar.className = 'avatar';
+	avatar.textContent = role === 'user' ? 'U' : 'A';
+	const content = document.createElement('div'); content.className = 'content';
+	content.innerHTML = `<div class="meta">${role === 'user' ? 'You' : 'Assistant'} <span class="time">${new Date().toLocaleTimeString()}</span></div><div class="body"></div>`;
+	const bodyEl = content.querySelector('.body');
+	if(role === 'assistant'){
+		bodyEl.innerHTML = renderMarkdown(text);
+	} else {
+		// user messages are escaped to avoid unintended HTML/markdown rendering
+		bodyEl.innerHTML = escapeHtml(String(text)).replace(/\n/g, '<br>');
+	}
+	el.appendChild(avatar);
+	el.appendChild(content);
 	messagesEl.appendChild(el);
 	messagesEl.scrollTop = messagesEl.scrollHeight;
 	return el;
@@ -56,44 +74,242 @@ function mockGenerate(prompt){
 	});
 }
 
-function startNewThread(){
-	// abort any in-flight generation
+function withTimeout(promise, ms, label){
+	const timer = new Promise((_, reject)=> setTimeout(()=> reject(new Error(`${label} timed out after ${ms}ms`)), ms));
+	return Promise.race([promise, timer]);
+}
+
+// ---- IndexedDB persistence helpers ----
+function openDB(){
+	return new Promise((resolve, reject)=>{
+		if(!('indexedDB' in window)) return resolve(null);
+		const req = indexedDB.open('gai-db', 1);
+		req.onupgradeneeded = (e)=>{
+			const d = e.target.result;
+			if(!d.objectStoreNames.contains('conversations')) d.createObjectStore('conversations', { keyPath: 'id' });
+			if(!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'key' });
+		};
+		req.onsuccess = (e)=> resolve(e.target.result);
+		req.onerror = (e)=> reject(e.target.error);
+	});
+}
+
+function idbGet(store, key){
+	return new Promise((resolve, reject)=>{
+		const tx = db.transaction([store], 'readonly');
+		const os = tx.objectStore(store);
+		const r = os.get(key);
+		r.onsuccess = ()=> resolve(r.result);
+		r.onerror = ()=> reject(r.error);
+	});
+}
+
+function idbPut(store, val){
+	return new Promise((resolve, reject)=>{
+		const tx = db.transaction([store], 'readwrite');
+		const os = tx.objectStore(store);
+		const r = os.put(val);
+		r.onsuccess = ()=> resolve(r.result);
+		r.onerror = ()=> reject(r.error);
+	});
+}
+
+function idbGetAll(store){
+	return new Promise((resolve, reject)=>{
+		const tx = db.transaction([store], 'readonly');
+		const os = tx.objectStore(store);
+		const r = os.getAll();
+		r.onsuccess = ()=> resolve(r.result);
+		r.onerror = ()=> reject(r.error);
+	});
+}
+
+function idbDelete(store, key){
+	return new Promise((resolve, reject)=>{
+		const tx = db.transaction([store], 'readwrite');
+		const os = tx.objectStore(store);
+		const r = os.delete(key);
+		r.onsuccess = ()=> resolve();
+		r.onerror = ()=> reject(r.error);
+	});
+}
+
+async function saveConversation(conv){
+	if(db) await idbPut('conversations', conv);
+	try{ localStorage.setItem('gai.conv.' + conv.id, JSON.stringify(conv)); }catch(e){}
+}
+
+async function loadConversations(){
+	let list = [];
+	if(db){
+		try{ list = await idbGetAll('conversations'); }
+		catch(e){ console.warn('idb getAll failed', e); }
+	}
+	if(!list || list.length === 0){
+		// fallback to localStorage scan
+		try{
+			for(const k in localStorage){
+				if(k.startsWith('gai.conv.')){
+					const v = JSON.parse(localStorage.getItem(k));
+					if(v) list.push(v);
+				}
+			}
+		}catch(e){}
+	}
+	// sort by updated desc
+	list.sort((a,b)=> (b.updated || 0) - (a.updated || 0));
+	return list;
+}
+
+async function saveMeta(key, value){
+	if(db) await idbPut('meta', { key, value });
+	try{ localStorage.setItem('gai.meta.'+key, JSON.stringify(value)); }catch(e){}
+}
+
+async function getMeta(key){
+	if(db){
+		try{ const r = await idbGet('meta', key); if(r) return r.value; }catch(e){}
+	}
+	try{ const l = localStorage.getItem('gai.meta.'+key); return l ? JSON.parse(l) : null; }catch(e){ return null; }
+}
+
+function makeId(){ return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8); }
+
+function renderThreadList(convs){
+	threadsEl.innerHTML = '';
+	convs.forEach(c => {
+		const el = document.createElement('div'); el.className = 'thread' + (c.id===currentConversationId?' active':'');
+		const title = document.createElement('div'); title.className='title'; title.textContent = c.title || 'Conversation';
+		const preview = document.createElement('div'); preview.className='preview'; preview.textContent = (c.messages && c.messages.length)? c.messages[c.messages.length-1].content.slice(0,120) : '';
+		const del = document.createElement('button'); del.className='thread-delete'; del.title='Delete conversation'; del.innerHTML='&times;';
+		del.addEventListener('click', (e)=>{ e.stopPropagation(); if(confirm('Delete this conversation?')) deleteConversation(c.id); });
+		el.appendChild(del);
+		el.appendChild(title); el.appendChild(preview);
+		el.addEventListener('click', ()=>{ loadConversation(c.id); });
+		threadsEl.appendChild(el);
+	});
+}
+
+async function createConversation(seedText, save=true){
+	const id = makeId();
+	const conv = { id, title: seedText ? seedText.slice(0,60) : 'New conversation', messages: [], created: Date.now(), updated: Date.now() };
+	if(seedText){ conv.messages.push({ role: 'assistant', content: seedText, timestamp: Date.now() }); }
+	if(save){
+		await saveConversation(conv);
+	} else {
+		// keep transient in memory until first user message
+		transientConvs[id] = conv;
+	}
+	return conv;
+}
+
+async function startNewThread(){
 	try{ controller?.abort(); }catch(e){}
 	try{ session?.destroy?.(); }catch(e){}
 	session = null;
-	// clear messages and re-add assistant starter
-	messagesEl.innerHTML = '';
-	appendMessage('assistant', 'New thread started. Hello — ask me anything.');
+	const conv = await createConversation('New thread started. Ask me anything.', false);
+	currentConversationId = conv.id;
+	await saveMeta('currentConversationId', conv.id);
+	const convs = await loadConversations();
+	renderThreadList(convs);
+	renderConversation(conv);
 	setStatus('New thread started');
 	input.focus();
 }
 
-function withTimeout(promise, ms, label){
-	const timer = new Promise((_, reject)=> setTimeout(()=> reject(new Error(`${label} timed out after ${ms}ms`)), ms));
-	return Promise.race([promise, timer]);
+async function loadConversation(id){
+	let conv = null;
+	// check transient in-memory convs first
+	if(transientConvs[id]) conv = transientConvs[id];
+	if(!conv && db){ try{ conv = await idbGet('conversations', id); }catch(e){}
+	}
+	if(!conv){ try{ conv = JSON.parse(localStorage.getItem('gai.conv.'+id)); }catch(e){}
+	}
+	if(!conv) return;
+	currentConversationId = conv.id;
+	await saveMeta('currentConversationId', conv.id);
+	// update thread list active state
+	const convs = await loadConversations(); renderThreadList(convs);
+	renderConversation(conv);
+}
+
+async function deleteConversation(id){
+	try{
+		if(db){ try{ await idbDelete('conversations', id); }catch(e){ console.warn('idb delete failed', e); } }
+		try{ localStorage.removeItem('gai.conv.'+id); }catch(e){}
+		const convs = await loadConversations();
+		// if current was deleted, switch to another or create a new one
+		if(currentConversationId === id){
+			if(convs.length > 0){
+				currentConversationId = convs[0].id;
+				await saveMeta('currentConversationId', currentConversationId);
+				await loadConversation(currentConversationId);
+			} else {
+				const conv = await createConversation('Hello — ask me anything.');
+				currentConversationId = conv.id;
+				await saveMeta('currentConversationId', currentConversationId);
+				renderThreadList(await loadConversations());
+				renderConversation(conv);
+			}
+		} else {
+			renderThreadList(convs);
+		}
+	}catch(e){ console.error('delete failed', e); }
+}
+
+function renderConversation(conv){
+	messagesEl.innerHTML = '';
+	conv.messages.forEach(m => appendMessage(m.role, m.content));
+	messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// Ensure conversation has a helpful title derived from its messages
+function ensureConversationTitle(conv){
+	if(!conv) return conv;
+	if(conv.title && conv.title !== 'New conversation' && !conv.title.startsWith('Hello')) return conv;
+	const firstUser = (conv.messages || []).find(m=>m.role==='user');
+	const firstAssistant = (conv.messages || []).find(m=>m.role==='assistant');
+	const src = firstUser ? firstUser.content : (firstAssistant ? firstAssistant.content : 'Conversation');
+	conv.title = (String(src).trim().slice(0,60)) || 'Conversation';
+	return conv;
+}
+
+async function persistAssistantMessage(content){
+	try{
+		if(!currentConversationId) return;
+		let conv = db ? await idbGet('conversations', currentConversationId) : JSON.parse(localStorage.getItem('gai.conv.'+currentConversationId) || '{}');
+		conv.messages = conv.messages || [];
+		conv.messages.push({ role: 'assistant', content: content, timestamp: Date.now() });
+		conv.updated = Date.now();
+		ensureConversationTitle(conv);
+		await saveConversation(conv);
+		const convs = await loadConversations(); renderThreadList(convs);
+	}catch(e){ console.warn('persist assistant msg failed', e); }
 }
 
 async function initAvailability(){
 	if(!('LanguageModel' in self)){
 		setStatus('Prompt API not supported — using fallback.');
 		sendBtn.disabled = false;
-		return;
+		// continue
 	}
 	try{
-		setStatus('Checking model availability...', true);
-		const availability = await LanguageModel.availability({
-            expectedInputs: [{ type: 'text', languages: ['en'] }],
-            expectedOutputs: [{ type: 'text', languages: ['en'] }],
-        });
-		if(availability === 'available'){
-			setStatus('Model ready.');
-			sendBtn.disabled = false;
-		} else if(availability === 'downloadable' || availability === 'downloading'){
-			setStatus(`Model status: ${availability}. Please wait for download.`);
-			sendBtn.disabled = true;
-		} else {
-			setStatus('Model unavailable on this device — using fallback.');
-			sendBtn.disabled = false;
+		if('LanguageModel' in self){
+			setStatus('Checking model availability...', true);
+			const availability = await LanguageModel.availability({
+				expectedInputs: [{ type: 'text', languages: ['en'] }],
+				expectedOutputs: [{ type: 'text', languages: ['en'] }],
+			});
+			if(availability === 'available'){
+				setStatus('Model ready.');
+				sendBtn.disabled = false;
+			} else if(availability === 'downloadable' || availability === 'downloading'){
+				setStatus(`Model status: ${availability}. Please wait for download.`);
+				sendBtn.disabled = true;
+			} else {
+				setStatus('Model unavailable on this device — using fallback.');
+				sendBtn.disabled = false;
+			}
 		}
 	}catch(err){
 		console.error('availability check failed', err);
@@ -102,10 +318,58 @@ async function initAvailability(){
 	}
 }
 
+async function initPersistence(){
+	try{ db = await openDB(); }catch(e){ console.warn('IndexedDB open failed', e); db = null; }
+	// Always start with a new conversation on page load
+	const starterText = 'Hello. Ask me anything. This will use Chrome\'s built-in local \'Nano\' LLM when available.';
+	const conv = await createConversation(starterText, false);
+	currentConversationId = conv.id;
+	await saveMeta('currentConversationId', currentConversationId);
+	// still render existing conversations (including the new one)
+	const convs = await loadConversations();
+	renderThreadList(convs);
+	// load the newly created conversation
+	await loadConversation(currentConversationId);
+}
+
 async function handleSend(prompt){
 	if(isRunning) return;
 	isRunning = true;
 	appendMessage('user', prompt);
+	// persist user message
+	try{
+		if(!currentConversationId){ const c = await createConversation(); currentConversationId = c.id; }
+		let conv = null;
+		if(db) conv = await idbGet('conversations', currentConversationId);
+		if(!conv) {
+			// check transient in-memory conv
+			if(transientConvs[currentConversationId]) conv = transientConvs[currentConversationId];
+			else conv = JSON.parse(localStorage.getItem('gai.conv.'+currentConversationId) || '{}');
+		}
+		conv.messages = conv.messages || [];
+		const prevFirst = conv.messages.length ? conv.messages[0] : null;
+		const prevLen = conv.messages.length;
+		const userMsg = { role: 'user', content: prompt, timestamp: Date.now() };
+		conv.messages.push(userMsg);
+		conv.updated = Date.now();
+		// If this is the first user prompt (or the conversation only had the starter assistant message), update the title
+		try{
+			const starterIndicator = 'New thread started';
+			if(prevLen === 0 || (prevLen === 1 && prevFirst && prevFirst.role === 'assistant' && String(prevFirst.content).includes(starterIndicator))){
+				conv.title = String(prompt).trim().slice(0,60) || conv.title;
+			}
+		}catch(e){}
+		// If conv was transient (in-memory), persist it now and remove from transient map
+		if(transientConvs[currentConversationId]){
+			try{
+				await saveConversation(conv);
+				delete transientConvs[currentConversationId];
+			}catch(e){ console.warn('persist transient failed', e); }
+		} else {
+			await saveConversation(conv);
+		}
+		const convs = await loadConversations(); renderThreadList(convs);
+	}catch(e){ console.warn('persist user msg failed', e); }
 	sendBtn.disabled = true;
 	cancelBtn.hidden = false;
 	setStatus('Thinking...', true);
@@ -113,6 +377,16 @@ async function handleSend(prompt){
 	controller = new AbortController();
 	let session = null;
 	const usePromptAPI = ('LanguageModel' in self);
+
+	// build combined prompt including conversation history so historic threads retain context
+	let combinedPrompt = prompt;
+	try{
+		let convForPrompt = null;
+		if(db) convForPrompt = await idbGet('conversations', currentConversationId);
+		if(!convForPrompt) convForPrompt = JSON.parse(localStorage.getItem('gai.conv.'+currentConversationId) || '{}');
+		const msgs = (convForPrompt.messages || []).map(m => (m.role === 'user' ? 'User: ' : 'Assistant: ') + m.content).join('\n');
+		combinedPrompt = SYSTEM_PROMPT + '\n\n' + msgs + '\nAssistant:';
+	}catch(e){ console.warn('could not build combined prompt', e); }
 
 	try{
 		if(usePromptAPI){
@@ -123,7 +397,7 @@ async function handleSend(prompt){
 
 			const assistantEl = appendMessage('assistant', '');
 			if(typeof session.promptStreaming === 'function'){
-				const stream = session.promptStreaming(prompt, {signal: controller.signal});
+				const stream = session.promptStreaming(combinedPrompt, {signal: controller.signal});
 				let accumulated = '';
 				let isCumulative = null;
 				let chunkIndex = 0;
@@ -141,20 +415,26 @@ async function handleSend(prompt){
 					}
 					messagesEl.scrollTop = messagesEl.scrollHeight;
 				}
+
+				// persist final accumulated response
+				try{ await persistAssistantMessage(accumulated); }catch(e){}
 			} else if(typeof session.prompt === 'function'){
-				const res = await session.prompt(prompt, {signal: controller.signal});
+				const res = await session.prompt(combinedPrompt, {signal: controller.signal});
 				assistantEl.querySelector('.body').innerHTML = renderMarkdown(String(res));
+				await persistAssistantMessage(String(res));
 			} else {
-				const res = await session.prompt(prompt);
+				const res = await session.prompt(combinedPrompt);
 				assistantEl.querySelector('.body').innerHTML = renderMarkdown(String(res));
+				await persistAssistantMessage(String(res));
 			}
 
 			setStatus(`Ready — conversation preserved.`);
 		} else {
 			// fallback mock
 			const assistantEl = appendMessage('assistant', '');
-			const text = await mockGenerate(prompt);
+			const text = await mockGenerate(combinedPrompt);
 			assistantEl.querySelector('.body').innerHTML = renderMarkdown(text);
+			await persistAssistantMessage(text);
 			setStatus('Fallback response');
 		}
 	}catch(err){
@@ -201,5 +481,21 @@ newThreadBtn?.addEventListener('click', ()=>{
   startNewThread();
 });
 
-appendMessage('assistant', 'Hello — ask me anything. This will use Chrome\'s built-in local \'Nano\' LLM when available.');
-initAvailability();
+// Info modal handlers
+infoBtn?.addEventListener('click', ()=>{
+	if(infoModal) infoModal.hidden = false;
+	// prevent body scroll while modal open
+	document.body.style.overflow = 'hidden';
+});
+closeInfoBtn?.addEventListener('click', ()=>{
+	if(infoModal) infoModal.hidden = true;
+	document.body.style.overflow = '';
+});
+// click overlay to close
+infoModal?.addEventListener('click', (e)=>{
+	if(e.target === infoModal){ infoModal.hidden = true; document.body.style.overflow = ''; }
+});
+window.addEventListener('keydown', (e)=>{ if(e.key === 'Escape' && infoModal && !infoModal.hidden){ infoModal.hidden = true; document.body.style.overflow = ''; } });
+
+// Initialize
+(async ()=>{ await initAvailability(); await initPersistence(); })();
