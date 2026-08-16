@@ -68,7 +68,8 @@ function renderMarkdown(md){
 	return escapeHtml(text).replace(/\n/g, '<br>');
 }
 
-function setStatus(text, busy=false, progress=null){
+function setStatus(text, busy=false, progress=null, error=false){
+	statusEl.classList.toggle('error', !!error);
 	statusEl.replaceChildren();
 	const line = document.createElement('div');
 	line.className = 'status-line';
@@ -96,6 +97,21 @@ function setStatus(text, busy=false, progress=null){
 		statusEl.appendChild(track);
 		statusEl.appendChild(detail);
 	}
+}
+
+function getModelErrorText(err, fallback='Model error'){
+	if(!err) return fallback;
+	if(err.message) return err.message;
+	if(typeof err === 'string' && err.trim()) return err.trim();
+	try{ return JSON.stringify(err); }catch(e){ return String(err); }
+}
+
+function showModelError(message, err){
+	stopModelStatusPolling();
+	const detail = getModelErrorText(err, 'Unknown model error');
+	setStatus(`${message}: ${detail}`, false, null, true);
+	sendBtn.disabled = false;
+	cancelBtn.hidden = true;
 }
 
 function mockGenerate(prompt){
@@ -396,7 +412,7 @@ async function refreshModelAvailability(){
 	}catch(err){
 		console.error('availability check failed', err);
 		stopModelStatusPolling();
-		setStatus('Could not check model status — using fallback.');
+		showModelError('Could not check model status', err);
 		sendBtn.disabled = false;
 		return true;
 	}
@@ -499,8 +515,15 @@ async function handleSend(prompt){
 	try{
 		if(usePromptAPI){
 			if(!session){
-				session = await withTimeout(LanguageModel.create({systemPrompt: systemPrompt, signal: controller.signal}), 30000, 'Session creation');
-				setStatus('Chat session ready.');
+				try{
+					session = await withTimeout(LanguageModel.create({systemPrompt: systemPrompt, signal: controller.signal}), 30000, 'Session creation');
+					setStatus('Chat session ready.');
+				}catch(err){
+					console.error('Model initialization failed', err);
+					showModelError('Model initialization failed', err);
+					finalStatus = 'Initialization failed';
+					throw err;
+				}
 			}
 
 			const assistantEl = appendMessage('assistant', 'Thinking...');
@@ -553,6 +576,7 @@ async function handleSend(prompt){
 			finalStatus = 'Cancelled';
 		} else {
 			console.error('Generation failed', err);
+			showModelError('Model error while responding', err);
 			appendMessage('assistant', 'Error generating response — check console.');
 			finalStatus = 'Error';
 		}

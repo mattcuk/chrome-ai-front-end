@@ -56,6 +56,8 @@ body{font-family:Inter,system-ui,Segoe UI,Roboto,Helvetica,Arial; margin:0; back
 #sendBtn:disabled{opacity:0.5;cursor:not-allowed}
 #sendBtn:active{transform:translateY(1px)}
 .status{padding:8px 12px;color:var(--muted);font-size:0.9rem;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;min-height:44px}
+.status.error{color:#fecaca}
+.status.error .status-text{color:#fecaca}
 .status-line{display:inline-flex;align-items:center;justify-content:center;gap:6px}
 .status-text{display:inline-block}
 .spinner{display:inline-block;width:18px;height:18px;margin-right:2px;border-radius:50%;border:2px solid rgba(255,255,255,0.08);border-top-color:var(--accent);animation:spin 1s linear infinite;vertical-align:middle}
