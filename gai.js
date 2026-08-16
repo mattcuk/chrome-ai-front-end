@@ -25,6 +25,7 @@ let session = null;
 let isRunning = false;
 let db = null;
 let currentConversationId = null;
+let modelStatusTimer = null;
 const transientConvs = {};
 
 function appendMessage(role, text){
@@ -67,11 +68,33 @@ function renderMarkdown(md){
 	return escapeHtml(text).replace(/\n/g, '<br>');
 }
 
-function setStatus(text, busy=false){
-	statusEl.textContent = text || '';
+function setStatus(text, busy=false, progress=null){
+	statusEl.replaceChildren();
+	const line = document.createElement('div');
+	line.className = 'status-line';
 	if(busy){
 		const s = document.createElement('span'); s.className='spinner';
-		statusEl.prepend(s);
+		line.appendChild(s);
+	}
+	const label = document.createElement('span');
+	label.className = 'status-text';
+	label.textContent = text || '';
+	line.appendChild(label);
+	statusEl.appendChild(line);
+
+	if(progress !== null && Number.isFinite(Number(progress))){
+		const pct = Math.max(0, Math.min(100, Number(progress)));
+		const track = document.createElement('div');
+		track.className = 'status-progress';
+		const bar = document.createElement('div');
+		bar.className = 'status-progress-bar';
+		bar.style.width = `${pct}%`;
+		track.appendChild(bar);
+		const detail = document.createElement('div');
+		detail.className = 'status-progress-label';
+		detail.textContent = `Downloading ${Math.round(pct)}%`;
+		statusEl.appendChild(track);
+		statusEl.appendChild(detail);
 	}
 }
 
@@ -318,31 +341,83 @@ async function saveSystemPrompt(value){
 	return systemPrompt;
 }
 
+function stopModelStatusPolling(){
+	if(modelStatusTimer){
+		clearInterval(modelStatusTimer);
+		modelStatusTimer = null;
+	}
+}
+
+async function refreshModelAvailability(){
+	if(!('LanguageModel' in self)){
+		setStatus('Prompt API not supported — using fallback.');
+		sendBtn.disabled = false;
+		return true;
+	}
+
+	try{
+		const availability = await LanguageModel.availability({
+			expectedInputs: [{ type: 'text', languages: ['en'] }],
+			expectedOutputs: [{ type: 'text', languages: ['en'] }],
+		});
+
+		const status = typeof availability === 'string'
+			? availability
+			: (availability && (availability.status || availability.state || availability.availability)) || 'unavailable';
+		const progressValue = (() => {
+			if(!availability || typeof availability !== 'object') return null;
+			const value = availability.downloadProgress ?? availability.progress ?? availability.percent ?? availability.percentage ?? null;
+			if(value === null || value === undefined) return null;
+			const num = Number(value);
+			return Number.isFinite(num) ? num : null;
+		})();
+		const percent = progressValue === null ? null : (progressValue <= 1 ? progressValue * 100 : progressValue);
+
+		if(status === 'available'){
+			stopModelStatusPolling();
+			setStatus('Ready.');
+			sendBtn.disabled = false;
+			return true;
+		}
+
+		if(status === 'downloadable' || status === 'downloading'){
+			const label = status === 'downloading'
+				? (percent === null ? 'Model is downloading...' : `Model downloading... ${Math.round(percent)}%`)
+				: 'Model not installed. Downloading...';
+			setStatus(label, true, percent);
+			sendBtn.disabled = true;
+			return false;
+		}
+
+		stopModelStatusPolling();
+		setStatus('Model unavailable on this device — using fallback.');
+		sendBtn.disabled = false;
+		return true;
+	}catch(err){
+		console.error('availability check failed', err);
+		stopModelStatusPolling();
+		setStatus('Could not check model status — using fallback.');
+		sendBtn.disabled = false;
+		return true;
+	}
+}
+
 async function initAvailability(){
 	if(!('LanguageModel' in self)){
 		setStatus('Prompt API not supported — using fallback.');
 		sendBtn.disabled = false;
-		// continue
+		return;
 	}
+
 	try{
-		if('LanguageModel' in self){
-			setStatus('Checking model availability...', true);
-			const availability = await LanguageModel.availability({
-				expectedInputs: [{ type: 'text', languages: ['en'] }],
-				expectedOutputs: [{ type: 'text', languages: ['en'] }],
-			});
-			if(availability === 'available'){
-				setStatus('Model ready.');
-				sendBtn.disabled = false;
-			} else if(availability === 'downloadable' || availability === 'downloading'){
-				setStatus(`Model status: ${availability}. Please wait for download.`);
-				sendBtn.disabled = true;
-			} else {
-				setStatus('Model unavailable on this device — using fallback.');
-				sendBtn.disabled = false;
-			}
-		}
-	}catch(err){
+		setStatus('Checking model availability...', true);
+		await refreshModelAvailability();
+		if(modelStatusTimer) return;
+		modelStatusTimer = setInterval(async ()=>{
+			const ready = await refreshModelAvailability();
+			if(ready) stopModelStatusPolling();
+		}, 2000);
+	} catch(err){
 		console.error('availability check failed', err);
 		setStatus('Could not check model status — using fallback.');
 		sendBtn.disabled = false;
